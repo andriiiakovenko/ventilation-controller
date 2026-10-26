@@ -103,7 +103,7 @@ String WebServerManager::buildStatusJson() {
     valvesObj["danylo"] = ctrl.getValveState("danylo");
     valvesObj["anastasiia"] = ctrl.getValveState("anastasiia");
     valvesObj["parents"] = ctrl.getValveState("parents");
-    valvesObj["gim"] = ctrl.getValveState("gim");
+    valvesObj["gym"] = ctrl.getValveState("gym");
 
     JsonObject sensorsObj = doc["sensors"].to<JsonObject>();
     JsonArray modulesArr = doc["modules"].to<JsonArray>();

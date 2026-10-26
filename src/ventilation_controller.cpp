@@ -24,10 +24,10 @@ void VentilationController::init() {
     parents.friendlyName = "Parents Room";
     rooms[parents.id] = parents;
 
-    RoomSensorData gim;
-    gim.id = "gim";
-    gim.friendlyName = "Gim Room";
-    rooms[gim.id] = gim;
+    RoomSensorData gym;
+    gym.id = "gym";
+    gym.friendlyName = "Gym Room";
+    rooms[gym.id] = gym;
 
     // Start with default MANUAL mode, FAN OFF, valves CLOSED
     currentMode = MODE_MANUAL;
@@ -36,9 +36,9 @@ void VentilationController::init() {
     RelayController::instance().setDanyloValve(false);
     RelayController::instance().setAnastasiiaValve(false);
     RelayController::instance().setParentsValve(false);
-    RelayController::instance().setGimValve(false);
+    RelayController::instance().setGymValve(false);
 
-    Serial.println("[VentilationController] Controller initialized with 4 rooms (including Gim).");
+    Serial.println("[VentilationController] Controller initialized with 4 rooms (including Gym).");
 }
 
 void VentilationController::registerStateChangeCallback(StateChangeCallback cb) {
@@ -71,7 +71,7 @@ bool VentilationController::isAnyValveOpen() const {
     return RelayController::instance().isDanyloValveOpen() ||
            RelayController::instance().isAnastasiiaValveOpen() ||
            RelayController::instance().isParentsValveOpen() ||
-           RelayController::instance().isGimValveOpen();
+           RelayController::instance().isGymValveOpen();
 }
 
 FanSpeed VentilationController::getFanSpeed() const {
@@ -92,7 +92,7 @@ void VentilationController::setFanSpeed(FanSpeed speed) {
         RelayController::instance().setDanyloValve(false);
         RelayController::instance().setAnastasiiaValve(false);
         RelayController::instance().setParentsValve(false);
-        RelayController::instance().setGimValve(false);
+        RelayController::instance().setGymValve(false);
         for (auto& pair : rooms) {
             pair.second.valveState = false;
         }
@@ -118,7 +118,7 @@ void VentilationController::setFanSpeed(FanSpeed speed) {
         RelayController::instance().setDanyloValve(true);
         RelayController::instance().setAnastasiiaValve(true);
         RelayController::instance().setParentsValve(true);
-        RelayController::instance().setGimValve(true);
+        RelayController::instance().setGymValve(true);
         for (auto& pair : rooms) {
             pair.second.valveState = true;
         }

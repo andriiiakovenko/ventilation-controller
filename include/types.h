@@ -50,6 +50,6 @@ struct __attribute__((packed)) ESPNowControlPacket {
 struct __attribute__((packed)) VentFwTargetDesc {
   char magic[16];    // "VENT_FW_DESC_V1"
   char role[16];     // "master" or "slave"
-  char targetId[16]; // "master" or room ID ("danylo", "anastasiia", "parents", "gim")
+  char targetId[16]; // "master" or room ID ("danylo", "anastasiia", "parents", "gym")
   char version[16];  // e.g. "0.0.1"
 };

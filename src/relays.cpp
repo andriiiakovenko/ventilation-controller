@@ -26,19 +26,19 @@ void RelayController::init() {
     pinMode(PIN_VALVE_DANYLO, OUTPUT);
     pinMode(PIN_VALVE_ANASTASIIA, OUTPUT);
     pinMode(PIN_VALVE_PARENTS, OUTPUT);
-    pinMode(PIN_VALVE_GIM, OUTPUT);
+    pinMode(PIN_VALVE_GYM, OUTPUT);
 
     allFanRelaysOff();
     rawWriteRelay(PIN_VALVE_DANYLO, false);
     rawWriteRelay(PIN_VALVE_ANASTASIIA, false);
     rawWriteRelay(PIN_VALVE_PARENTS, false);
-    rawWriteRelay(PIN_VALVE_GIM, false);
+    rawWriteRelay(PIN_VALVE_GYM, false);
 
     currentSpeed = FAN_OFF;
     valveDanylo = false;
     valveAnastasiia = false;
     valveParents = false;
-    valveGim = false;
+    valveGym = false;
 
     Serial.println("[Relays] Hardware initialized. All relays OFF.");
 }
@@ -84,8 +84,8 @@ void RelayController::setValve(const String& roomId, bool open) {
         setAnastasiiaValve(open);
     } else if (roomId == "parents") {
         setParentsValve(open);
-    } else if (roomId == "gim") {
-        setGimValve(open);
+    } else if (roomId == "gym") {
+        setGymValve(open);
     }
 }
 
@@ -93,7 +93,7 @@ bool RelayController::getValve(const String& roomId) const {
     if (roomId == "danylo") return isDanyloValveOpen();
     if (roomId == "anastasiia") return isAnastasiiaValveOpen();
     if (roomId == "parents") return isParentsValveOpen();
-    if (roomId == "gim") return isGimValveOpen();
+    if (roomId == "gym") return isGymValveOpen();
     return false;
 }
 
@@ -115,10 +115,10 @@ void RelayController::setParentsValve(bool open) {
     Serial.printf("[Relays] Valve Parents: %s\n", open ? "OPEN" : "CLOSED");
 }
 
-void RelayController::setGimValve(bool open) {
-    valveGim = open;
-    rawWriteRelay(PIN_VALVE_GIM, open);
-    Serial.printf("[Relays] Valve Gim: %s\n", open ? "OPEN" : "CLOSED");
+void RelayController::setGymValve(bool open) {
+    valveGym = open;
+    rawWriteRelay(PIN_VALVE_GYM, open);
+    Serial.printf("[Relays] Valve Gym: %s\n", open ? "OPEN" : "CLOSED");
 }
 
 bool RelayController::isDanyloValveOpen() const {
@@ -133,6 +133,6 @@ bool RelayController::isParentsValveOpen() const {
     return valveParents;
 }
 
-bool RelayController::isGimValveOpen() const {
-    return valveGim;
+bool RelayController::isGymValveOpen() const {
+    return valveGym;
 }

@@ -106,12 +106,13 @@ void HAMqttManager::publishDiscovery() {
     }
 
     // 3. Room Valves Switches
-    const char* roomIds[] = {"danylo", "anastasiia", "parents", "gim"};
-    const char* roomNames[] = {"Danylo Room Valve", "Anastasiia Room Valve", "Parents Room Valve", "Gim Room Valve"};
+    const char* roomIds[] = {"danylo", "anastasiia", "parents", "gym"};
+    const char* valveNames[] = {"Danylo Room Valve", "Anastasiia Room Valve", "Parents Room Valve", "Gym Room Valve"};
+    const char* roomNames[] = {"Danylo Room", "Anastasiia Room", "Parents Room", "Gym Room"};
 
     for (int i = 0; i < 4; i++) {
         JsonDocument doc;
-        doc["name"] = roomNames[i];
+        doc["name"] = valveNames[i];
         doc["unique_id"] = String("valve_") + roomIds[i];
         doc["command_topic"] = String("ventilation/valve/") + roomIds[i] + "/set";
         doc["state_topic"] = String("ventilation/valve/") + roomIds[i] + "/state";
@@ -129,7 +130,7 @@ void HAMqttManager::publishDiscovery() {
         mqttClient.publish(topic.c_str(), payload.c_str(), true);
     }
 
-    // 4. Room Sensors (Temp & Humidity & Air Quality)
+    // 4. Room Sensors (Temp, Humidity, Air Quality & Time Since Last Update)
     for (int i = 0; i < 4; i++) {
         // Temperature
         {
@@ -203,7 +204,34 @@ void HAMqttManager::publishDiscovery() {
             serializeJson(doc, payload);
             mqttClient.publish(topic.c_str(), payload.c_str(), true);
         }
+        // Last Update (seconds since last ESP-NOW packet received)
+        {
+            JsonDocument doc;
+            doc["name"] = String(roomNames[i]) + " Last Update";
+            doc["unique_id"] = String("last_update_") + roomIds[i];
+            doc["state_topic"] = String("ventilation/sensor/") + roomIds[i] + "/last_update";
+            doc["unit_of_measurement"] = "s";
+            doc["device_class"] = "duration";
+            doc["state_class"] = "measurement";
+            doc["icon"] = "mdi:clock-outline";
+
+            JsonObject dev = doc["device"].to<JsonObject>();
+            dev["identifiers"][0] = devId;
+            dev["name"] = devName;
+
+            String topic = String("homeassistant/sensor/") + roomIds[i] + "_last_update/config";
+            String payload;
+            serializeJson(doc, payload);
+            mqttClient.publish(topic.c_str(), payload.c_str(), true);
+        }
     }
+
+    // Remove legacy "gim" discovery topics (empty retained payload tells HA & Mosquitto to delete them)
+    mqttClient.publish("homeassistant/switch/valve_gim/config", "", true);
+    mqttClient.publish("homeassistant/sensor/gim_temp/config", "", true);
+    mqttClient.publish("homeassistant/sensor/gim_hum/config", "", true);
+    mqttClient.publish("homeassistant/sensor/gim_co2/config", "", true);
+    mqttClient.publish("homeassistant/sensor/gim_pm25/config", "", true);
 
     Serial.println("[MQTT] Home Assistant discovery entities published.");
 }
@@ -227,8 +255,14 @@ void HAMqttManager::publishModeState() {
 void HAMqttManager::publishSensorTelemetry() {
     // Work on a copy so the controller lock isn't held during (potentially slow) socket writes.
     const auto rooms = VentilationController::instance().getRoomsSnapshot();
+    unsigned long now = millis();
     for (const auto& pair : rooms) {
         const RoomSensorData& s = pair.second;
+        if (s.lastSeen > 0) {
+            unsigned long agoSec = (now >= s.lastSeen) ? ((now - s.lastSeen) / 1000UL) : 0UL;
+            String lastUpdTopic = String("ventilation/sensor/") + pair.first + "/last_update";
+            mqttClient.publish(lastUpdTopic.c_str(), String(agoSec).c_str(), true);
+        }
         if (s.isOnline) {
             String tempTopic = String("ventilation/sensor/") + pair.first + "/temp";
             String humTopic = String("ventilation/sensor/") + pair.first + "/hum";
@@ -255,7 +289,7 @@ void HAMqttManager::publishAllStates() {
     publishValveState("danylo", VentilationController::instance().getValveState("danylo"));
     publishValveState("anastasiia", VentilationController::instance().getValveState("anastasiia"));
     publishValveState("parents", VentilationController::instance().getValveState("parents"));
-    publishValveState("gim", VentilationController::instance().getValveState("gim"));
+    publishValveState("gym", VentilationController::instance().getValveState("gym"));
     publishSensorTelemetry();
 }
 
@@ -313,7 +347,7 @@ void HAMqttManager::update() {
         }
 
         unsigned long now = millis();
-        if (now - lastTelemetryPublish > 15000) {
+        if (now - lastTelemetryPublish >= 5000) {
             lastTelemetryPublish = now;
             publishSensorTelemetry();
         }
