@@ -7,6 +7,7 @@
 #include "ventilation_controller.h"
 #include "web_server.h"
 #include "ha_mqtt.h"
+#include "qingping_broker.h"
 
 static unsigned long bootTime = 0;
 static bool softApDisabled = false;
@@ -14,6 +15,7 @@ static bool softApDisabled = false;
 void setupWiFi() {
     // Dual mode: SoftAP provides direct access + keeps Wi-Fi channel stable for ESP-NOW
     WiFi.mode(WIFI_AP_STA);
+    WiFi.setSleep(false);
 
     // Start SoftAP on configured ESPNOW channel
     WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASSWORD, ESPNOW_CHANNEL);
@@ -26,10 +28,11 @@ void setupWiFi() {
     if (strlen(WIFI_STA_SSID) > 0 && String(WIFI_STA_SSID) != "YourWiFiSSID") {
         Serial.printf("[WiFi] Connecting to Station SSID: %s ...\n", WIFI_STA_SSID);
         WiFi.begin(WIFI_STA_SSID, WIFI_STA_PASSWORD);
+        WiFi.setSleep(false);
 
         unsigned long startAttempt = millis();
-        // Wait up to 8 seconds for connection to prevent blocking autonomous startup
-        while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 8000) {
+        // Wait up to 15 seconds for connection to prevent blocking autonomous startup
+        while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 15000) {
             delay(250);
             Serial.print(".");
         }
@@ -74,7 +77,10 @@ void setup() {
     // 5. Initialize Web Server and REST API (including Web OTA)
     WebServerManager::instance().init();
 
-    // 6. Initialize Home Assistant MQTT client
+    // 6. Initialize Embedded Direct Qingping Wi-Fi Server (TCP 1883, zero HA dependency)
+    QingpingBroker::instance().init();
+
+    // 7. Initialize Home Assistant MQTT client
     HAMqttManager::instance().init();
 
     Serial.println("[System] Boot completed. Controller is running.");
@@ -84,13 +90,16 @@ void loop() {
     // 0. Dispatch ESP-NOW packets queued by the Wi-Fi task (processed here, in the loop task)
     ESPNowReceiver::instance().process();
 
-    // 1. Run periodic autonomous ventilation checks
+    // 1. Service direct Qingping Wi-Fi sensor connections (embedded port 1883 server)
+    QingpingBroker::instance().update();
+
+    // 2. Run periodic autonomous ventilation checks
     VentilationController::instance().update();
 
-    // 2. Web server background tasks (e.g. scheduled OTA reboot)
+    // 3. Web server background tasks (e.g. scheduled OTA reboot)
     WebServerManager::instance().update();
 
-    // 3. Process MQTT loop and auto-reconnects
+    // 4. Process MQTT loop and auto-reconnects
     HAMqttManager::instance().update();
 
     // 4. SoftAP 5-minute auto-disable when connected to home Wi-Fi
