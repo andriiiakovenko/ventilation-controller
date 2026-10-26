@@ -47,6 +47,9 @@ bool HAMqttManager::reconnect() {
         mqttClient.subscribe("ventilation/fan/speed/set");
         mqttClient.subscribe("ventilation/valve/+/set");
         mqttClient.subscribe("ventilation/mode/set");
+        // Subscribe to Qingping / external Wi-Fi sensor topics
+        mqttClient.subscribe("qingping/+/up");
+        mqttClient.subscribe("ventilation/sensor/+/external");
 
         publishDiscovery();
         publishAllStates();
@@ -294,12 +297,20 @@ void HAMqttManager::publishAllStates() {
 }
 
 void HAMqttManager::onMessage(char* topic, byte* payload, unsigned int length) {
+    String topicStr = String(topic);
+
+    // Route Qingping or external JSON sensor payloads before 64-byte control truncation
+    if (topicStr.startsWith("qingping/") || topicStr.startsWith("ventilation/sensor/")) {
+        String jsonPayload((const char*)payload, length);
+        VentilationController::instance().onQingpingJson(topicStr, jsonPayload, "MQTT-Broker");
+        return;
+    }
+
     char msg[64];
     if (length >= sizeof(msg)) length = sizeof(msg) - 1;
     memcpy(msg, payload, length);
     msg[length] = '\0';
 
-    String topicStr = String(topic);
     String msgStr = String(msg);
     msgStr.trim();
 

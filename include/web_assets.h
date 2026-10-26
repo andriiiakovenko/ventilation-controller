@@ -872,6 +872,76 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
                         </tbody>
                     </table>
                 </div>
+
+                <!-- Qingping Direct Wi-Fi Binding & Auto-Discovery Card -->
+                <div class="panel-card" id="qp-admin-card">
+                    <div class="panel-header">Qingping Air Monitor Lite (CGDN1) — Direct Wi-Fi Connection</div>
+                    <div style="padding:16px;">
+                        <div class="note-card" style="margin-bottom:14px;">
+                            <b class="note-label">Zero Single-Point-of-Failure Setup (Direct to Ventilation Controller):</b>
+                            <ol>
+                                <li>Open <a href="https://developer.qingping.co" target="_blank" style="color:var(--accent-blue);">developer.qingping.co</a> (Private Access Config &rarr; Add Configuration &rarr; <b>Self-built MQTT</b>).</li>
+                                <li>Set <b>Broker IP</b> to <code id="qp-broker-ip" style="color:#4ade80; font-weight:700;">192.168.51.100</code>, <b>Port</b>: <code>1883</code>, <b>Up Topic</b>: <code>qingping/{mac}/up</code>, <b>Down Topic</b>: <code>qingping/{mac}/down</code>.</li>
+                                <li>As soon as each Qingping connects over Wi-Fi, it will appear under <b>Discovered Qingping Monitors</b> below (and automatically switch to 15-second live reporting). Click a room button to bind it!</li>
+                            </ol>
+                        </div>
+
+                        <table class="panel-table" style="border:1px solid #283340; margin-bottom:16px;">
+                            <tr class="subhead-row">
+                                <td colspan="2">Room &larr; Qingping MAC Assignments</td>
+                            </tr>
+                            <tr>
+                                <td class="col-label">
+                                    <div style="font-weight:700; color:#fff;">Danylo Room</div>
+                                    <div style="font-size:0.75rem; color:var(--accent-blue);">Stue Air Monitor (Qingping)</div>
+                                </td>
+                                <td class="col-val">
+                                    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                                        <input type="text" id="qp-mac-danylo" placeholder="e.g. CC:B5:D1:32:21:0E"
+                                               style="background:#11161d; border:1px solid #354252; color:#fff; padding:6px 10px; border-radius:4px; font-family:monospace; width:190px;">
+                                        <button class="btn-top-action" onclick="saveQingpingMac('danylo')">Save MAC</button>
+                                        <span id="qp-cur-danylo" style="font-size:0.78rem; color:var(--text-muted);"></span>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="col-label">
+                                    <div style="font-weight:700; color:#fff;">Anastasiia Room</div>
+                                    <div style="font-size:0.75rem; color:var(--accent-blue);">Kontor Air Monitor (Qingping)</div>
+                                </td>
+                                <td class="col-val">
+                                    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                                        <input type="text" id="qp-mac-anastasiia" placeholder="e.g. CC:B5:D1:32:1C:16"
+                                               style="background:#11161d; border:1px solid #354252; color:#fff; padding:6px 10px; border-radius:4px; font-family:monospace; width:190px;">
+                                        <button class="btn-top-action" onclick="saveQingpingMac('anastasiia')">Save MAC</button>
+                                        <span id="qp-cur-anastasiia" style="font-size:0.78rem; color:var(--text-muted);"></span>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="col-label">
+                                    <div style="font-weight:700; color:#fff;">Parents Room</div>
+                                    <div style="font-size:0.75rem; color:var(--accent-blue);">Foreldre Air Monitor (Qingping)</div>
+                                </td>
+                                <td class="col-val">
+                                    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                                        <input type="text" id="qp-mac-parents" placeholder="e.g. CC:B5:D1:32:23:41"
+                                               style="background:#11161d; border:1px solid #354252; color:#fff; padding:6px 10px; border-radius:4px; font-family:monospace; width:190px;">
+                                        <button class="btn-top-action" onclick="saveQingpingMac('parents')">Save MAC</button>
+                                        <span id="qp-cur-parents" style="font-size:0.78rem; color:var(--text-muted);"></span>
+                                    </div>
+                                </td>
+                            </tr>
+                        </table>
+
+                        <div style="font-size:0.84rem; font-weight:700; color:#fff; margin-bottom:8px;">
+                            Auto-Discovered Qingping Monitors (<span id="qp-client-count">0</span> direct TCP clients):
+                        </div>
+                        <div id="qp-discovered-list" style="font-size:0.8rem; color:var(--text-muted);">
+                            Waiting for Qingping monitors to report on port 1883...
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- ================= VIEW 2: DASHBOARD (VENTILATION CONTROLS) ================= -->
@@ -954,7 +1024,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
 
                 <!-- Sensor Nodes Overview -->
                 <div class="panel-card">
-                    <div class="panel-header">Wireless Room Sensors (ESP-NOW)</div>
+                    <div class="panel-header">Room Sensors (Qingping Wi-Fi Direct + ESP-NOW)</div>
                     <div style="padding:16px;">
                         <div class="dashboard-grid" id="dash-sensors-grid"></div>
                     </div>
@@ -1126,27 +1196,31 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
 
                 if (nodeMods.length === 0) {
                     html = `<tr><td colspan="2" style="padding:14px; text-align:center; color:var(--text-muted);">
-                        Waiting for wireless sensor nodes (ESP-NOW telemetry)...</td></tr>`;
+                        Waiting for wireless sensor nodes...</td></tr>`;
                 } else {
                     nodeMods.forEach(m => {
+                        const isQingping = (m.sensor_type === 'qingping');
                         const statusBadge = m.online 
-                            ? `<span style="color:#4ade80; font-weight:700;">● Online</span> (${m.ip ? m.ip : 'ESP-NOW Mesh'}, ${Math.round(m.ago_sec)}s ago)`
-                            : `<span style="color:#f87171; font-weight:700;">● Offline</span>`;
+                            ? `<span style="color:#4ade80; font-weight:700;">● Online</span> (${m.ip ? m.ip : (isQingping ? 'Wi-Fi MQTT' : 'ESP-NOW')}${m.mac ? ' | MAC: ' + m.mac : ''}, ${Math.round(m.ago_sec)}s ago)`
+                            : `<span style="color:#f87171; font-weight:700;">● Offline</span>${m.mac ? ' (Bound MAC: ' + m.mac + ')' : ''}`;
                         
+                        const actionHtml = isQingping
+                            ? `<button class="btn-top-action" onclick="const el=document.getElementById('qp-mac-${m.id}'); if(el){el.scrollIntoView({behavior:'smooth',block:'center'}); el.focus();}">&#9881; Configure Qingping MAC</button>`
+                            : `<button class="btn-update" onclick="openOtaModal('${m.id}')">&#11014; Update Firmware</button>`;
+
                         html += `
                         <tr>
                             <td class="col-label">
                                 <div style="font-weight:700; color:#fff;">${m.name}</div>
-                                <div style="font-size:0.75rem; color:#94a3b8;">${m.model} &bull; <code>ventslave_${m.id}_*.bin</code></div>
+                                <div style="font-size:0.75rem; color:#94a3b8;">${m.sensor_label || m.model}</div>
+                                ${!isQingping ? `<div style="font-size:0.7rem; color:#64748b;"><code>ventslave_${m.id}_*.bin</code></div>` : ''}
                             </td>
                             <td class="col-val">
                                 <div style="display:flex; flex-direction:column; gap:6px;">
-                                    <div>Current Version : <span class="fw-ver-tag" onclick="openOtaModal('${m.id}')">v${m.version || '0.0.1'}</span></div>
+                                    <div>${isQingping ? 'Model : <span class="fw-ver-tag">Qingping CGDN1</span>' : `Current Version : <span class="fw-ver-tag" onclick="openOtaModal('${m.id}')">v${m.version || '0.0.1'}</span>`}</div>
                                     <div style="font-size:0.8rem; color:var(--text-muted);">${statusBadge}</div>
                                     <div style="margin-top:2px;">
-                                        <button class="btn-update" onclick="openOtaModal('${m.id}')">
-                                            &#11014; Update Firmware
-                                        </button>
+                                        ${actionHtml}
                                     </div>
                                 </div>
                             </td>
@@ -1194,10 +1268,15 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
             if (sensorsContainer && data.sensors) {
                 let sHtml = '';
                 for (const [id, s] of Object.entries(data.sensors)) {
+                    const isQingping = (s.sensor_type === 'qingping');
+                    const srcTag = isQingping ? 'Qingping Wi-Fi' : 'ESP-NOW';
                     sHtml += `
                     <div class="sensor-card">
                         <div class="sensor-card-top">
-                            <span style="font-weight:700; color:#fff;">${s.name}</span>
+                            <div>
+                                <div style="font-weight:700; color:#fff;">${s.name}</div>
+                                <div style="font-size:0.72rem; color:var(--accent-blue);">${s.sensor_label || srcTag}</div>
+                            </div>
                             <span class="badge-status ${s.online ? 'badge-online' : 'badge-offline'}">
                                 ${s.online ? 'ONLINE' : 'OFFLINE'}
                             </span>
@@ -1216,19 +1295,78 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
                                 <div class="sensor-metric-val" style="color:#fbbf24;">${s.co2} ppm</div>
                                 <div class="sensor-metric-label">CO₂ Level</div>
                             </div>` : ''}
-                            ${(s.pm25 > 0) ? `
+                            ${(s.pm25 > 0 || isQingping) ? `
                             <div>
-                                <div class="sensor-metric-val" style="color:#c084fc;">${s.pm25} µg/m³</div>
-                                <div class="sensor-metric-label">PM2.5 Dust</div>
+                                <div class="sensor-metric-val" style="color:#c084fc;">${s.online ? s.pm25 + ' µg/m³' : '--'}</div>
+                                <div class="sensor-metric-label">PM2.5${s.pm10 > 0 ? ' (PM10: ' + s.pm10 + ')' : ''}</div>
                             </div>` : ''}
                         </div>
                         <div style="font-size:0.75rem; color:var(--text-muted); display:flex; justify-content:space-between;">
-                            <span>Firmware: v${s.version || '0.0.1'}</span>
+                            <span>${isQingping ? (s.mac ? 'MAC: ' + s.mac : 'Unbound MAC') : 'FW: v' + (s.version || '0.0.1')}</span>
                             <span>${s.online ? Math.round(s.ago_sec) + 's ago' : 'Offline'}</span>
                         </div>
                     </div>`;
                 }
                 sensorsContainer.innerHTML = sHtml;
+            }
+
+            // Qingping Direct Wi-Fi Binding & Discovery Section
+            const qpBrokerIp = document.getElementById('qp-broker-ip');
+            if (qpBrokerIp && data.local_ip) {
+                qpBrokerIp.textContent = data.local_ip;
+            }
+            const qpClientCnt = document.getElementById('qp-client-count');
+            if (qpClientCnt) {
+                qpClientCnt.textContent = (data.qingping_clients !== undefined) ? data.qingping_clients : 0;
+            }
+            if (data.sensors) {
+                ['danylo', 'anastasiia', 'parents'].forEach(r => {
+                    const s = data.sensors[r];
+                    const curEl = document.getElementById(`qp-cur-${r}`);
+                    const inpEl = document.getElementById(`qp-mac-${r}`);
+                    if (curEl && s) {
+                        curEl.innerHTML = s.assigned_mac
+                            ? `<span style="color:#4ade80;">Bound: <code>${s.mac}</code></span>`
+                            : `<span style="color:#f59e0b;">Not bound yet</span>`;
+                    }
+                    if (inpEl && s && s.mac && document.activeElement !== inpEl && !inpEl.value) {
+                        inpEl.value = s.mac;
+                    }
+                });
+            }
+            const qpListEl = document.getElementById('qp-discovered-list');
+            if (qpListEl && data.discovered_qingpings) {
+                if (data.discovered_qingpings.length === 0) {
+                    qpListEl.innerHTML = `<div style="padding:10px; background:#161c24; border:1px solid #283340; border-radius:6px;">
+                        Waiting for Qingping monitors to report on TCP port <code>${data.qingping_broker_port || 1883}</code> (or MQTT <code>qingping/+/up</code>)...
+                    </div>`;
+                } else {
+                    let dHtml = '<div style="display:flex; flex-direction:column; gap:8px;">';
+                    data.discovered_qingpings.forEach(dq => {
+                        const boundBadge = dq.bound_room
+                            ? `<span style="color:#4ade80; font-weight:700;">Bound &rarr; ${dq.bound_room.toUpperCase()}</span>`
+                            : `<span style="color:#fbbf24; font-weight:700;">Unassigned</span>`;
+                        const metricsText = dq.has_metrics
+                            ? `CO₂: <b style="color:#fbbf24;">${dq.co2} ppm</b> | Temp: <b style="color:#38bdf8;">${dq.temp.toFixed(1)}°C</b> | Hum: <b style="color:#4ade80;">${dq.hum.toFixed(1)}%</b> | PM2.5: <b>${dq.pm25} µg/m³</b> | PM10: <b>${dq.pm10} µg/m³</b>`
+                            : `Connected (waiting for sensor payload...)`;
+                        dHtml += `
+                        <div style="background:#161c24; border:1px solid #283340; border-radius:6px; padding:10px 14px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                            <div>
+                                <div style="font-weight:700; color:#fff;">
+                                    Qingping <code>${dq.formatted_mac}</code> (${dq.ip || 'Wi-Fi'}, ${Math.round(dq.ago_sec)}s ago) &bull; ${boundBadge}
+                                </div>
+                                <div style="font-size:0.78rem; color:#cbd5e1; margin-top:3px;">${metricsText}</div>
+                            </div>
+                            <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                                <button class="btn-top-action" onclick="bindQingping('${dq.mac}', 'danylo')">Bind &rarr; Danylo (Stue)</button>
+                                <button class="btn-top-action" onclick="bindQingping('${dq.mac}', 'anastasiia')">Bind &rarr; Anastasiia (Kontor)</button>
+                                <button class="btn-top-action" onclick="bindQingping('${dq.mac}', 'parents')">Bind &rarr; Parents (Foreldre)</button>
+                            </div>
+                        </div>`;
+                    });
+                    dHtml += '</div>';
+                    qpListEl.innerHTML = dHtml;
+                }
             }
 
             // System Diagnostics
@@ -1291,6 +1429,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
             const expectedRole = isMasterTarget ? 'master' : 'slave';
             const expectedTargetId = isMasterTarget ? 'master' : mod.id.toLowerCase();
             const expectedPrefix = isMasterTarget ? 'ventmaster_' : `ventslave_${expectedTargetId}_`;
+            const isMigrateParentsToGym = (!isMasterTarget && fnLower.startsWith('ventslave_migrate_parents_to_gym_') && (expectedTargetId === 'parents' || expectedTargetId === 'gym'));
 
             // 1. Filename prefix check
             if (isMasterTarget && fnLower.startsWith('ventslave')) {
@@ -1305,7 +1444,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
                     error: `❌ Firmware Mismatch: "${file.name}" is a Master Controller firmware file and cannot be flashed to ${mod.name}.`
                 };
             }
-            if (!isMasterTarget && fnLower.startsWith('ventslave_') && !fnLower.startsWith(expectedPrefix)) {
+            if (!isMasterTarget && fnLower.startsWith('ventslave_') && !fnLower.startsWith(expectedPrefix) && !isMigrateParentsToGym) {
                 return {
                     ok: false,
                     error: `❌ Room Mismatch: "${file.name}" does not match ${mod.name} (expected "${expectedPrefix}*.bin").`
@@ -1351,7 +1490,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
             const binTargetId = readNullTerminatedAscii(bytes, 320, 16).toLowerCase();
             const binVersion = readNullTerminatedAscii(bytes, 336, 16);
 
-            if (binRole !== expectedRole || binTargetId !== expectedTargetId) {
+            if (binRole !== expectedRole || (binTargetId !== expectedTargetId && !isMigrateParentsToGym)) {
                 return {
                     ok: false,
                     error: `❌ Target Mismatch: Binary is compiled for "${binRole}:${binTargetId}", cannot flash onto "${expectedRole}:${expectedTargetId}" (${mod.name}).`
@@ -1564,6 +1703,27 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
                 await fetch(`/api/mode?val=${next}`, { method: 'POST' });
                 fetchStatus();
             } catch(e) { console.error(e); }
+        }
+
+        async function bindQingping(mac, room) {
+            try {
+                const res = await fetch(`/api/qingping/bind?room=${encodeURIComponent(room)}&mac=${encodeURIComponent(mac)}`, { method: 'POST' });
+                if (res.ok) {
+                    const inp = document.getElementById(`qp-mac-${room}`);
+                    if (inp) inp.value = mac;
+                    fetchStatus();
+                } else {
+                    alert("Failed to bind Qingping MAC. Make sure it is a valid 12-hex MAC address.");
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        async function saveQingpingMac(room) {
+            const inp = document.getElementById(`qp-mac-${room}`);
+            const mac = inp ? inp.value.trim() : '';
+            await bindQingping(mac, room);
         }
 
         async function restartController() {

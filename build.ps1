@@ -204,6 +204,33 @@ if ($Target -eq "all" -or $Target -eq "slaves") {
         $slaveLatest = Join-Path $buildsDir "ventslave_${sNameClean}_latest.bin"
         Copy-Item -Path $slaveSrc -Destination $slaveLatest -Force
 
+        # If building 'gym', also create a one-time OTA migration image (parents -> gym)
+        if ($sNameClean -eq "gym") {
+            $migBytes = [System.IO.File]::ReadAllBytes($slaveSrc)
+            $oldXor = 0
+            for ($i = 320; $i -le 335; $i++) {
+                $oldXor = $oldXor -bxor $migBytes[$i]
+                $migBytes[$i] = 0
+            }
+            $pBytes = [System.Text.Encoding]::ASCII.GetBytes("parents")
+            $newXor = 0
+            for ($i = 0; $i -lt $pBytes.Length; $i++) {
+                $migBytes[320 + $i] = $pBytes[$i]
+                $newXor = $newXor -bxor $pBytes[$i]
+            }
+            $chkIdx = $migBytes.Length - 33
+            $migBytes[$chkIdx] = [byte]($migBytes[$chkIdx] -bxor $oldXor -bxor $newXor)
+            $sha = [System.Security.Cryptography.SHA256]::Create().ComputeHash($migBytes, 0, $migBytes.Length - 32)
+            [Array]::Copy($sha, 0, $migBytes, $migBytes.Length - 32, 32)
+
+            $migFileName = "ventslave_migrate_parents_to_gym_${Version}_${timestamp}.bin"
+            $migDest = Join-Path $buildsDir $migFileName
+            [System.IO.File]::WriteAllBytes($migDest, $migBytes)
+            $migLatest = Join-Path $buildsDir "ventslave_migrate_parents_to_gym_latest.bin"
+            [System.IO.File]::WriteAllBytes($migLatest, $migBytes)
+            Write-Host "  -> Created OTA Migration Binary (parents -> gym): $migFileName" -ForegroundColor Magenta
+        }
+
         $slaveSizeKB = [math]::Round(((Get-Item $slaveDest).Length / 1KB), 1)
         $exportedFiles += [PSCustomObject]@{
             Module     = "Slave ($sNameClean)"

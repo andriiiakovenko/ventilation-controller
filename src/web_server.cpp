@@ -1,6 +1,7 @@
 #include "web_server.h"
 #include "web_assets.h"
 #include "ventilation_controller.h"
+#include "qingping_broker.h"
 #include <ArduinoJson.h>
 #include <Update.h>
 #include <StreamString.h>
@@ -98,6 +99,8 @@ String WebServerManager::buildStatusJson() {
     doc["mac"] = WiFi.macAddress();
     doc["free_heap"] = ESP.getFreeHeap();
     doc["rssi"] = (WiFi.status() == WL_CONNECTED) ? WiFi.RSSI() : 0;
+    doc["qingping_broker_port"] = QINGPING_BROKER_PORT;
+    doc["qingping_clients"] = QingpingBroker::instance().getConnectedClientCount();
 
     JsonObject valvesObj = doc["valves"].to<JsonObject>();
     valvesObj["danylo"] = ctrl.getValveState("danylo");
@@ -126,18 +129,21 @@ String WebServerManager::buildStatusJson() {
 
     unsigned long now = millis();
 
-    // This runs in the async_tcp task: iterate a locked copy, never the live map
-    // (the loop task mutates it on every ESP-NOW packet).
     const auto rooms = ctrl.getRoomsSnapshot();
     for (const auto& pair : rooms) {
         const RoomSensorData& s = pair.second;
         JsonObject sObj = sensorsObj[pair.first].to<JsonObject>();
         sObj["name"] = s.friendlyName;
+        sObj["sensor_type"] = s.sensorType;
+        sObj["sensor_label"] = s.sensorLabel;
+        sObj["assigned_mac"] = s.assignedMac;
         sObj["temp"] = s.temperature;
         sObj["hum"] = s.humidity;
         sObj["co2"] = s.co2;
         sObj["pm25"] = s.pm25;
+        sObj["pm10"] = s.pm10;
         sObj["bat"] = s.batteryVoltage;
+        sObj["bat_pct"] = s.batteryPct;
         sObj["online"] = s.isOnline;
         sObj["version"] = s.fwVersion;
         sObj["ip"] = s.ip;
@@ -148,7 +154,10 @@ String WebServerManager::buildStatusJson() {
         JsonObject nodeMod = modulesArr.add<JsonObject>();
         nodeMod["id"] = pair.first;
         nodeMod["name"] = s.friendlyName;
-        nodeMod["model"] = "ESP32-C3 Sensor";
+        nodeMod["sensor_type"] = s.sensorType;
+        nodeMod["sensor_label"] = s.sensorLabel;
+        nodeMod["assigned_mac"] = s.assignedMac;
+        nodeMod["model"] = (s.sensorType == "qingping") ? "Qingping Air Monitor Lite (Wi-Fi)" : "ESP32-C3 Sensor (ESP-NOW)";
         nodeMod["role"] = "sensor";
         nodeMod["fw_target"] = pair.first;
         nodeMod["expected_prefix"] = "ventslave_" + pair.first + "_";
@@ -157,11 +166,31 @@ String WebServerManager::buildStatusJson() {
         nodeMod["mac"] = s.mac;
         nodeMod["online"] = s.isOnline;
         nodeMod["ago_sec"] = sObj["ago_sec"];
-        if (s.ip.length() > 0 && s.ip != "0.0.0.0") {
+        if (s.sensorType != "qingping" && s.ip.length() > 0 && s.ip != "0.0.0.0") {
             nodeMod["update_url"] = "http://" + s.ip + "/update";
         } else {
             nodeMod["update_url"] = "";
         }
+    }
+
+    // Discovered Qingping Wi-Fi devices
+    JsonArray qpArr = doc["discovered_qingpings"].to<JsonArray>();
+    const auto discovered = ctrl.getDiscoveredQingpingsSnapshot();
+    for (const auto& pair : discovered) {
+        const DiscoveredQingping& dq = pair.second;
+        JsonObject qObj = qpArr.add<JsonObject>();
+        qObj["mac"] = dq.mac;
+        qObj["formatted_mac"] = dq.formattedMac;
+        qObj["ip"] = dq.ip;
+        qObj["temp"] = dq.temperature;
+        qObj["hum"] = dq.humidity;
+        qObj["co2"] = dq.co2;
+        qObj["pm25"] = dq.pm25;
+        qObj["pm10"] = dq.pm10;
+        qObj["bat_pct"] = dq.batteryPct;
+        qObj["has_metrics"] = dq.hasMetrics;
+        qObj["ago_sec"] = dq.lastSeen > 0 ? (float)(now - dq.lastSeen) / 1000.0f : -1.0f;
+        qObj["bound_room"] = ctrl.getRoomForQingpingMac(dq.mac);
     }
 
     String response;
@@ -243,6 +272,46 @@ void WebServerManager::setupRoutes() {
     server.on("/api/restart", HTTP_POST, [this]() {
         server.send(200, "application/json", "{\"status\":\"rebooting\"}");
         this->scheduleReboot(1000);
+    });
+
+    // POST /api/qingping/bind?room=danylo&mac=582D34123456
+    server.on("/api/qingping/bind", HTTP_POST, [this]() {
+        if (server.hasArg("room")) {
+            String room = server.arg("room");
+            String mac = server.hasArg("mac") ? server.arg("mac") : "";
+            if (VentilationController::instance().bindQingpingToRoom(room, mac)) {
+                server.send(200, "application/json", "{\"status\":\"ok\"}");
+                return;
+            }
+        }
+        server.send(400, "application/json", "{\"status\":\"invalid_param\"}");
+    });
+
+    // POST /api/sensor/external?room=danylo&temp=24.2&hum=58.7&co2=821&pm25=2&pm10=2
+    server.on("/api/sensor/external", HTTP_POST, [this]() {
+        if (server.hasArg("plain") && server.arg("plain").length() > 0) {
+            String topic = server.hasArg("room") ? (String("ventilation/sensor/") + server.arg("room") + "/external") : "qingping/http/up";
+            if (VentilationController::instance().onQingpingJson(topic, server.arg("plain"), server.client().remoteIP().toString())) {
+                server.send(200, "application/json", "{\"status\":\"ok\"}");
+                return;
+            }
+        }
+        if (server.hasArg("room") && server.hasArg("temp") && server.hasArg("hum")) {
+            String room = server.arg("room");
+            float temp = server.arg("temp").toFloat();
+            float hum = server.arg("hum").toFloat();
+            uint16_t co2 = server.hasArg("co2") ? (uint16_t)server.arg("co2").toInt() : 0;
+            uint16_t pm25 = server.hasArg("pm25") ? (uint16_t)server.arg("pm25").toInt() : 0;
+            uint16_t pm10 = server.hasArg("pm10") ? (uint16_t)server.arg("pm10").toInt() : 0;
+            uint8_t bat = server.hasArg("bat") ? (uint8_t)server.arg("bat").toInt() : 100;
+            String mac = server.hasArg("mac") ? server.arg("mac") : "";
+            VentilationController::instance().onExternalRoomReadings(
+                room, temp, hum, co2, pm25, pm10, bat, "qingping", mac, server.client().remoteIP().toString()
+            );
+            server.send(200, "application/json", "{\"status\":\"ok\"}");
+            return;
+        }
+        server.send(400, "application/json", "{\"status\":\"invalid_param\"}");
     });
 
     // CORS preflight for /update (same as Slave sensor nodes)

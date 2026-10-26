@@ -9,22 +9,41 @@ enum VentilationMode { MODE_MANUAL = 0, MODE_AUTO = 1 };
 struct RoomSensorData {
   String id;
   String friendlyName;
+  String sensorType = "espnow"; // "espnow" or "qingping"
+  String sensorLabel = "";      // e.g. "Stue Air Monitor", "Kontor Air Monitor", "Foreldre Air Monitor"
+  String assignedMac = "";      // Normalized 12-char hex MAC for Qingping binding
   float temperature = 0.0f;
   float humidity = 0.0f;
   float batteryVoltage = 0.0f;
-  uint16_t co2 = 0;       // CO2 in ppm (from SCD40)
-  uint16_t pm25 = 0;      // PM2.5 in ug/m3 (from Cubic PM1006K)
+  uint8_t batteryPct = 0;       // 0-100% battery from Qingping
+  uint16_t co2 = 0;             // CO2 in ppm (from SCD40 or SenseAir S8)
+  uint16_t pm25 = 0;            // PM2.5 in ug/m3
+  uint16_t pm10 = 0;            // PM10 in ug/m3 (from Qingping)
   unsigned long lastSeen = 0;
   bool isOnline = false;
-  bool valveState = false; // true = OPEN, false = CLOSED
+  bool valveState = false;      // true = OPEN, false = CLOSED
   String fwVersion = "0.0.1";
   String ip = "";
   String mac = "";
 };
 
+struct DiscoveredQingping {
+  String mac;                   // Normalized 12-char uppercase hex (e.g. "582D34123456")
+  String formattedMac;          // "58:2D:34:12:34:56"
+  String ip;
+  float temperature = 0.0f;
+  float humidity = 0.0f;
+  uint16_t co2 = 0;
+  uint16_t pm25 = 0;
+  uint16_t pm10 = 0;
+  uint8_t batteryPct = 0;
+  bool hasMetrics = false;
+  unsigned long lastSeen = 0;
+};
+
 // ESP-NOW packet structure matching the remote sensor nodes
 struct __attribute__((packed)) ESPNowSensorPacket {
-  char roomId[16];      // e.g. "danylo", "anastasiia", "parents"
+  char roomId[16];      // e.g. "danylo", "anastasiia", "parents", "gym"
   float temperature;    // deg C
   float humidity;       // % RH
   float batteryVoltage; // e.g. 3.3V or 4.2V
@@ -34,9 +53,10 @@ struct __attribute__((packed)) ESPNowSensorPacket {
   char fwVersion[12];   // e.g. "0.0.1"
   char ip[16];          // e.g. "192.168.51.105"
 };
+
 // ESP-NOW packet structure matching the remote control nodes
 struct __attribute__((packed)) ESPNowControlPacket {
-  char roomId[16];         // e.g. "danylo", "anastasiia", "parents"
+  char roomId[16];         // e.g. "danylo", "anastasiia", "parents", "gym"
   uint8_t fanSpeed;        // 0 = OFF, 1 = SLOW, 2 = MEDIUM, 3 = HIGH
   uint8_t ventilationMode; // 0 = MANUAL, 1 = AUTO
   uint32_t packetSeq;
