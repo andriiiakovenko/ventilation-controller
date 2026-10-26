@@ -498,15 +498,36 @@ bool VentilationController::onQingpingPayload(const String& topic, const uint8_t
     return onQingpingJson(topic, strPayload, remoteIp);
 }
 
-bool VentilationController::onQingpingJson(const String& topic, const String& payload, const String& remoteIp) {
-    JsonDocument doc;
-    DeserializationError err = deserializeJson(doc, payload);
-    if (err) {
-        Serial.printf("[Qingping] JSON parse error on [%s]: %s\n", topic.c_str(), err.c_str());
-        return false;
-    }
+// Fallback extractor for large (>4KB) historical JSON payloads where only the tail 4KB is kept
+static bool extractLastJsonNumberFromTail(const String& str, const char* key, float& outVal) {
+    String needle = String("\"") + key + "\"";
+    int pos = str.lastIndexOf(needle);
+    if (pos < 0) return false;
+    int colon = str.indexOf(':', pos + needle.length());
+    if (colon < 0) return false;
 
-    // 1. Extract MAC from topic (e.g. "qingping/582D34123456/up") or JSON body ("mac" / "info.mac")
+    // Look within the next 64 chars for either a direct number or "value":<number>
+    String sub = str.substring(colon + 1, min((int)str.length(), colon + 65));
+    int valIdx = sub.indexOf("\"value\"");
+    if (valIdx >= 0) {
+        int valColon = sub.indexOf(':', valIdx + 7);
+        if (valColon >= 0) {
+            sub = sub.substring(valColon + 1);
+        }
+    }
+    sub.trim();
+    for (size_t i = 0; i < sub.length(); i++) {
+        char c = sub[i];
+        if ((c >= '0' && c <= '9') || c == '-') {
+            outVal = sub.substring(i).toFloat();
+            return true;
+        }
+    }
+    return false;
+}
+
+bool VentilationController::onQingpingJson(const String& topic, const String& payload, const String& remoteIp) {
+    // 1. Extract MAC from topic (e.g. "qingping/CC-B5-D1-32-1C-16/up") first
     String rawMac = "";
     if (topic.startsWith("qingping/")) {
         int secondSlash = topic.indexOf('/', 9);
@@ -514,40 +535,55 @@ bool VentilationController::onQingpingJson(const String& topic, const String& pa
             rawMac = topic.substring(9, secondSlash);
         }
     }
-    if (rawMac.length() == 0 && doc["mac"].is<const char*>()) {
-        rawMac = doc["mac"].as<const char*>();
-    }
-    if (rawMac.length() == 0 && doc["info"]["mac"].is<const char*>()) {
-        rawMac = doc["info"]["mac"].as<const char*>();
-    }
-
-    String normMac = normalizeMac(rawMac);
-
-    // Locate the sensor data object:
-    // CGDN1 uses "sensorData": [ { "temperature": {"value": 24.2}, ... } ]
-    // Some firmwares use "data": [ ... ] or top-level keys
-    JsonVariantConst sObj = doc.as<JsonVariantConst>();
-    if (doc["sensorData"].is<JsonArrayConst>()) {
-        JsonArrayConst arr = doc["sensorData"].as<JsonArrayConst>();
-        if (arr.size() > 0) {
-            sObj = arr[arr.size() - 1]; // latest entry in array
-        }
-    } else if (doc["data"].is<JsonArrayConst>()) {
-        JsonArrayConst arr = doc["data"].as<JsonArrayConst>();
-        if (arr.size() > 0) {
-            sObj = arr[arr.size() - 1];
-        }
-    }
 
     float temp = 0.0f, hum = 0.0f;
     uint16_t co2 = 0, pm25 = 0, pm10 = 0, bat = 0;
+    bool hasTemp = false, hasHum = false, hasCo2 = false, hasPm25 = false, hasPm10 = false, hasBat = false;
 
-    bool hasTemp = extractJsonFloat(sObj, "temperature", temp) || extractJsonFloat(sObj, "temp", temp);
-    bool hasHum  = extractJsonFloat(sObj, "humidity", hum) || extractJsonFloat(sObj, "hum", hum);
-    bool hasCo2  = extractJsonUInt16(sObj, "co2", co2);
-    bool hasPm25 = extractJsonUInt16(sObj, "pm25", pm25);
-    bool hasPm10 = extractJsonUInt16(sObj, "pm10", pm10);
-    bool hasBat  = extractJsonUInt16(sObj, "battery", bat);
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, payload);
+    if (!err) {
+        if (rawMac.length() == 0 && doc["mac"].is<const char*>()) {
+            rawMac = doc["mac"].as<const char*>();
+        }
+        if (rawMac.length() == 0 && doc["info"]["mac"].is<const char*>()) {
+            rawMac = doc["info"]["mac"].as<const char*>();
+        }
+
+        JsonVariantConst sObj = doc.as<JsonVariantConst>();
+        if (doc["sensorData"].is<JsonArrayConst>()) {
+            JsonArrayConst arr = doc["sensorData"].as<JsonArrayConst>();
+            if (arr.size() > 0) {
+                sObj = arr[arr.size() - 1]; // latest entry in array
+            }
+        } else if (doc["data"].is<JsonArrayConst>()) {
+            JsonArrayConst arr = doc["data"].as<JsonArrayConst>();
+            if (arr.size() > 0) {
+                sObj = arr[arr.size() - 1];
+            }
+        }
+
+        hasTemp = extractJsonFloat(sObj, "temperature", temp) || extractJsonFloat(sObj, "temp", temp);
+        hasHum  = extractJsonFloat(sObj, "humidity", hum) || extractJsonFloat(sObj, "hum", hum);
+        hasCo2  = extractJsonUInt16(sObj, "co2", co2);
+        hasPm25 = extractJsonUInt16(sObj, "pm25", pm25);
+        hasPm10 = extractJsonUInt16(sObj, "pm10", pm10);
+        hasBat  = extractJsonUInt16(sObj, "battery", bat);
+    }
+
+    // Fallback: if payload was a >4KB historical batch dump (tail-sliced) or nested differently,
+    // scan for the last occurrence of each metric in the tail string
+    if (!hasTemp && !hasHum && !hasCo2) {
+        hasTemp = extractLastJsonNumberFromTail(payload, "temperature", temp);
+        hasHum  = extractLastJsonNumberFromTail(payload, "humidity", hum);
+        float fCo2 = 0, fPm25 = 0, fPm10 = 0, fBat = 0;
+        if (extractLastJsonNumberFromTail(payload, "co2", fCo2) && fCo2 >= 0) { co2 = (uint16_t)fCo2; hasCo2 = true; }
+        if (extractLastJsonNumberFromTail(payload, "pm25", fPm25) && fPm25 >= 0) { pm25 = (uint16_t)fPm25; hasPm25 = true; }
+        if (extractLastJsonNumberFromTail(payload, "pm10", fPm10) && fPm10 >= 0) { pm10 = (uint16_t)fPm10; hasPm10 = true; }
+        if (extractLastJsonNumberFromTail(payload, "battery", fBat) && fBat >= 0) { bat = (uint16_t)fBat; hasBat = true; }
+    }
+
+    String normMac = normalizeMac(rawMac);
 
     bool hasAnyMetric = (hasTemp || hasHum || hasCo2 || hasPm25 || hasPm10);
 
