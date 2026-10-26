@@ -938,13 +938,13 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
                                 </label>
                             </div>
 
-                            <div class="valve-item-row" id="valve-row-gim">
+                            <div class="valve-item-row" id="valve-row-gym">
                                 <div>
-                                    <div style="font-size:0.88rem; font-weight:700;">Gim Room</div>
-                                    <div style="font-size:0.75rem; color:var(--text-muted);" id="valve-desc-gim">Valve Closed</div>
+                                    <div style="font-size:0.88rem; font-weight:700;">Gym Room</div>
+                                    <div style="font-size:0.75rem; color:var(--text-muted);" id="valve-desc-gym">Valve Closed</div>
                                 </div>
                                 <label class="switch-toggle">
-                                    <input type="checkbox" id="chk-valve-gim" onchange="toggleValve('gim', this.checked)">
+                                    <input type="checkbox" id="chk-valve-gym" onchange="toggleValve('gym', this.checked)">
                                     <span class="slider-round"></span>
                                 </label>
                             </div>
@@ -1178,7 +1178,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
 
             // Valves
             if (data.valves) {
-                ['danylo', 'anastasiia', 'parents', 'gim'].forEach(r => {
+                ['danylo', 'anastasiia', 'parents', 'gym'].forEach(r => {
                     const chk = document.getElementById(`chk-valve-${r}`);
                     const row = document.getElementById(`valve-row-${r}`);
                     const desc = document.getElementById(`valve-desc-${r}`);

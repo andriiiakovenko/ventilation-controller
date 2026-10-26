@@ -8,9 +8,9 @@
 .PARAMETER Target
     Build target: "all" (default), "master", or "slaves".
 .PARAMETER Slaves
-    Array of slave room names to build (default: "danylo", "anastasiia", "parents", "gim").
+    Array of slave room names to build (default: "danylo", "anastasiia", "parents", "gym").
 .PARAMETER Slave
-    Optional single slave room name to build (e.g. "parents" or "gim").
+    Optional single slave room name to build (e.g. "parents" or "gym").
 .PARAMETER Version
     Optional firmware version string (e.g. "0.0.1"). Defaults to version found in include/config.h.
 #>
@@ -19,7 +19,7 @@ param(
     [ValidateSet("all", "master", "slaves")]
     [string]$Target = "all",
 
-    [string[]]$Slaves = @("danylo", "anastasiia", "parents", "gim"),
+    [string[]]$Slaves = @("danylo", "anastasiia", "parents", "gym"),
 
     [string]$Slave = "",
 

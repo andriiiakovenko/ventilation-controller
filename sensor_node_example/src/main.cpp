@@ -8,7 +8,7 @@
  * - Cubic PM1006K:
  *     TX of sensor -> GPIO 20 (RX on ESP32-C3)
  * 
- * Monitored Room: "parents" (or "danylo", "anastasiia", "gim")
+ * Monitored Room: "parents" (or "danylo", "anastasiia", "gym")
  * Features:
  * - Broadcasts telemetry over ESP-NOW
  * - Connects to Wi-Fi (STA) with Web OTA (/update) and ArduinoOTA
@@ -27,7 +27,7 @@
 
 // ================= USER CONFIGURATION =================
 #ifndef ROOM_ID
-#define ROOM_ID             "parents"     // Monitored room: "parents", "danylo", "anastasiia", "gim"
+#define ROOM_ID             "parents"     // Monitored room: "parents", "danylo", "anastasiia", "gym"
 #endif
 #ifndef FIRMWARE_VERSION
 #define FIRMWARE_VERSION    "0.0.4"       // Current sensor node firmware version
@@ -69,7 +69,7 @@ struct __attribute__((packed)) ESPNowSensorPacket {
 struct __attribute__((packed)) VentFwTargetDesc {
     char magic[16];    // "VENT_FW_DESC_V1"
     char role[16];     // "master" or "slave"
-    char targetId[16]; // "master" or room ID ("danylo", "anastasiia", "parents", "gim")
+    char targetId[16]; // "master" or room ID ("danylo", "anastasiia", "parents", "gym")
     char version[16];  // e.g. "0.0.4"
 };
 

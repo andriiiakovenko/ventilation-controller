@@ -23,7 +23,7 @@
 #define PIN_VALVE_DANYLO 27
 #define PIN_VALVE_ANASTASIIA 32
 #define PIN_VALVE_PARENTS 33
-#define PIN_VALVE_GIM 25
+#define PIN_VALVE_GYM 25
 
 // Safety deadtime when switching fan speeds (in milliseconds)
 // Prevents two speed taps from briefly energizing together
