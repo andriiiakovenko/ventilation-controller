@@ -193,6 +193,11 @@ String WebServerManager::buildStatusJson() {
         qObj["bound_room"] = ctrl.getRoomForQingpingMac(dq.mac);
     }
 
+    JsonArray qpLogsArr = doc["qingping_logs"].to<JsonArray>();
+    for (const auto& logLine : QingpingBroker::instance().getRecentLogs()) {
+        qpLogsArr.add(logLine);
+    }
+
     String response;
     serializeJson(doc, response);
     return response;

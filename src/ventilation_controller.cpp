@@ -401,6 +401,103 @@ static bool extractJsonUInt16(JsonVariantConst obj, const char* key, uint16_t& o
     return false;
 }
 
+void VentilationController::onQingpingConnected(const String& rawMac, const String& remoteIp) {
+    String normMac = normalizeMac(rawMac);
+    if (normMac.length() != 12) return;
+
+    std::lock_guard<std::recursive_mutex> lock(stateMutex);
+    unsigned long now = millis();
+    DiscoveredQingping& dq = discoveredQingpings[normMac];
+    dq.mac = normMac;
+    dq.formattedMac = formatMacColon(normMac);
+    if (remoteIp.length() > 0) dq.ip = remoteIp;
+    dq.lastSeen = now;
+
+    String targetRoom = getRoomForQingpingMac(normMac);
+    if (targetRoom.length() > 0 && rooms.find(targetRoom) != rooms.end()) {
+        RoomSensorData& room = rooms[targetRoom];
+        room.sensorType = "qingping";
+        room.mac = dq.formattedMac;
+        if (remoteIp.length() > 0) room.ip = remoteIp;
+    }
+    notifyChange();
+}
+
+bool VentilationController::onQingpingPayload(const String& topic, const uint8_t* data, size_t len, const String& remoteIp) {
+    if (!data || len == 0) return false;
+
+    // Check if payload starts with Qingping binary TLV magic bytes "CG" (0x43, 0x47)
+    if (len >= 5 && data[0] == 0x43 && data[1] == 0x47) {
+        String rawMac = "";
+        if (topic.startsWith("qingping/")) {
+            int secondSlash = topic.indexOf('/', 9);
+            if (secondSlash > 9) {
+                rawMac = topic.substring(9, secondSlash);
+            }
+        }
+        String normMac = normalizeMac(rawMac);
+
+        float temp = 0.0f, hum = 0.0f;
+        uint16_t co2 = 0, pm25 = 0, pm10 = 0, bat = 0;
+        bool hasTemp = false, hasHum = false, hasCo2 = false, hasPm = false, hasBat = false;
+
+        // Parse TLV blocks after "CG" header (some packets have 2-byte "CG", some have "CG" + 1-byte cmd + 2-byte len)
+        size_t idx = (len > 5 && (data[3] + (data[4] << 8) == (int)len - 5)) ? 5 : 2;
+        while (idx + 2 <= len) {
+            uint8_t tag = data[idx];
+            uint8_t tLen = data[idx + 1];
+            if (idx + 2 + tLen > len) break;
+            const uint8_t* val = data + idx + 2;
+
+            if (tag == 0x01 && tLen >= 4) { // Temp (int16/10) + Hum (uint16/10)
+                int16_t rawT = (int16_t)((uint16_t)val[0] | ((uint16_t)val[1] << 8));
+                uint16_t rawH = (uint16_t)val[2] | ((uint16_t)val[3] << 8);
+                temp = rawT / 10.0f;
+                hum = rawH / 10.0f;
+                hasTemp = true;
+                hasHum = true;
+            } else if (tag == 0x02 && tLen >= 1) { // Battery %
+                bat = val[0];
+                hasBat = true;
+            } else if (tag == 0x12 && tLen >= 4) { // PM2.5 + PM10
+                pm25 = (uint16_t)val[0] | ((uint16_t)val[1] << 8);
+                pm10 = (uint16_t)val[2] | ((uint16_t)val[3] << 8);
+                hasPm = true;
+            } else if (tag == 0x13 && tLen >= 2) { // CO2 ppm
+                co2 = (uint16_t)val[0] | ((uint16_t)val[1] << 8);
+                hasCo2 = true;
+            }
+            idx += 2 + tLen;
+        }
+
+        if (normMac.length() == 12 && (hasTemp || hasHum || hasCo2 || hasPm)) {
+            String targetRoom = getRoomForQingpingMac(normMac);
+            std::lock_guard<std::recursive_mutex> lock(stateMutex);
+            DiscoveredQingping& dq = discoveredQingpings[normMac];
+            dq.mac = normMac;
+            dq.formattedMac = formatMacColon(normMac);
+            if (remoteIp.length() > 0) dq.ip = remoteIp;
+            dq.lastSeen = millis();
+            if (hasTemp) dq.temperature = temp;
+            if (hasHum)  dq.humidity = hum;
+            if (hasCo2)  dq.co2 = co2;
+            if (hasPm)   { dq.pm25 = pm25; dq.pm10 = pm10; }
+            if (hasBat)  dq.batteryPct = (uint8_t)min((uint16_t)100, bat);
+            dq.hasMetrics = true;
+
+            if (targetRoom.length() > 0) {
+                onExternalRoomReadings(targetRoom, dq.temperature, dq.humidity, dq.co2, dq.pm25, dq.pm10, dq.batteryPct, "qingping", normMac, remoteIp);
+            } else {
+                notifyChange();
+            }
+            return true;
+        }
+    }
+
+    String strPayload((const char*)data, len);
+    return onQingpingJson(topic, strPayload, remoteIp);
+}
+
 bool VentilationController::onQingpingJson(const String& topic, const String& payload, const String& remoteIp) {
     JsonDocument doc;
     DeserializationError err = deserializeJson(doc, payload);

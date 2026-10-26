@@ -937,9 +937,14 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
                         <div style="font-size:0.84rem; font-weight:700; color:#fff; margin-bottom:8px;">
                             Auto-Discovered Qingping Monitors (<span id="qp-client-count">0</span> direct TCP clients):
                         </div>
-                        <div id="qp-discovered-list" style="font-size:0.8rem; color:var(--text-muted);">
+                        <div id="qp-discovered-list" style="font-size:0.8rem; color:var(--text-muted); margin-bottom:14px;">
                             Waiting for Qingping monitors to report on port 1883...
                         </div>
+
+                        <div style="font-size:0.84rem; font-weight:700; color:#fff; margin-bottom:6px;">
+                            Port 1883 Live Broker Activity Log:
+                        </div>
+                        <pre id="qp-broker-logs" style="background:#0f141a; border:1px solid #283340; border-radius:6px; padding:10px 12px; font-family:monospace; font-size:0.75rem; color:#94a3b8; white-space:pre-wrap; word-break:break-all; max-height:180px; overflow-y:auto;">No activity yet...</pre>
                     </div>
                 </div>
             </div>
@@ -1367,6 +1372,12 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
                     dHtml += '</div>';
                     qpListEl.innerHTML = dHtml;
                 }
+            }
+            const qpLogsEl = document.getElementById('qp-broker-logs');
+            if (qpLogsEl && data.qingping_logs) {
+                qpLogsEl.textContent = data.qingping_logs.length > 0
+                    ? data.qingping_logs.join('\n')
+                    : 'No TCP connections received on port 1883 yet.';
             }
 
             // System Diagnostics

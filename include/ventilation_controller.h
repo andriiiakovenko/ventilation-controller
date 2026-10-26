@@ -30,6 +30,8 @@ public:
 
     // Sensor processing (ESP-NOW & Qingping Wi-Fi / External)
     void onSensorPacket(const ESPNowSensorPacket& packet, const uint8_t* mac);
+    void onQingpingConnected(const String& rawMac, const String& remoteIp);
+    bool onQingpingPayload(const String& topic, const uint8_t* data, size_t len, const String& remoteIp = "");
     bool onQingpingJson(const String& topic, const String& payload, const String& remoteIp = "");
     void onExternalRoomReadings(const String& roomId, float temp, float hum, uint16_t co2,
                                 uint16_t pm25, uint16_t pm10, uint8_t batPct,

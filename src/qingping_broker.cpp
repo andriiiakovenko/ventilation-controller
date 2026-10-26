@@ -11,8 +11,22 @@ QingpingBroker::QingpingBroker() : server(QINGPING_BROKER_PORT) {}
 void QingpingBroker::init() {
     server.begin();
     server.setNoDelay(true);
-    Serial.printf("[QingpingBroker] Embedded Direct MQTT server listening on TCP port %d (Zero HA SPOF mode)\n",
+    addLog("Port 1883 Direct MQTT Broker started — waiting for Qingping TCP connections");
+    Serial.printf("[QingpingBroker] Embedded Direct MQTT server listening on TCP port %d\n",
                   QINGPING_BROKER_PORT);
+}
+
+void QingpingBroker::addLog(const String& entry) {
+    unsigned long sec = millis() / 1000UL;
+    String line = String("[") + sec + "s] " + entry;
+    recentLogs.push_back(line);
+    if (recentLogs.size() > 8) {
+        recentLogs.erase(recentLogs.begin());
+    }
+}
+
+std::vector<String> QingpingBroker::getRecentLogs() const {
+    return recentLogs;
 }
 
 int QingpingBroker::getConnectedClientCount() const {
@@ -62,7 +76,7 @@ void QingpingBroker::sendFastReportConfig(WiFiClient& client, const String& down
     String cfg17 = "{\"id\":1,\"need_ack\":1,\"type\":\"17\",\"setting\":{\"report_interval\":15,\"collect_interval\":15,\"co2_sampling_interval\":15,\"pm_sampling_interval\":15}}";
     publishToClient(client, downTopic, cfg17);
 
-    // 2. Request real-time 15-second upload stream for 24h (type 12)
+    // 2. Request real-time 15-second upload stream for 24h (type 12, string & int variants)
     String cfg12 = "{\"type\":\"12\",\"up_itvl\":\"15\",\"duration\":\"86400\"}";
     publishToClient(client, downTopic, cfg12);
 
@@ -99,7 +113,6 @@ void QingpingBroker::handleClientPacket(QingpingClientSlot& slot) {
         bytesRead++;
     } while ((encodedByte & 0x80) != 0 && bytesRead < 4);
 
-    // Cap maximum payload size to 2048 bytes to protect heap
     if (remLen > 2048) {
         while (remLen > 0 && client.connected()) {
             if (client.available()) {
@@ -129,12 +142,41 @@ void QingpingBroker::handleClientPacket(QingpingClientSlot& slot) {
     if (got < remLen) return;
 
     slot.lastActivity = millis();
+    String remoteIp = client.remoteIP().toString();
 
     switch (packetType) {
         case 1: { // CONNECT
             const uint8_t connack[4] = {0x20, 0x02, 0x00, 0x00};
             client.write(connack, 4);
-            Serial.printf("[QingpingBroker] Client connected from %s\n", client.remoteIP().toString().c_str());
+
+            // Parse ClientId from MQTT CONNECT payload (after protocol name + 4 bytes header)
+            String clientId = "";
+            if (remLen >= 8) {
+                uint16_t protoLen = ((uint16_t)buf[0] << 8) | buf[1];
+                size_t cidOffset = 2 + protoLen + 4; // level(1) + flags(1) + keepalive(2)
+                if (cidOffset + 2 <= remLen) {
+                    uint16_t cidLen = ((uint16_t)buf[cidOffset] << 8) | buf[cidOffset + 1];
+                    if (cidOffset + 2 + cidLen <= remLen) {
+                        clientId = String((const char*)(buf.data() + cidOffset + 2), cidLen);
+                    }
+                }
+            }
+
+            // If clientId starts with "qingping-", extract the MAC
+            if (clientId.startsWith("qingping-")) {
+                String rawMacPart = clientId.substring(9);
+                String normMac = VentilationController::normalizeMac(rawMacPart);
+                if (normMac.length() == 12) {
+                    slot.mac = normMac;
+                    if (slot.downTopic.length() == 0) {
+                        slot.downTopic = String("qingping/") + rawMacPart + "/down";
+                    }
+                    VentilationController::instance().onQingpingConnected(normMac, remoteIp);
+                }
+            }
+
+            addLog(String("CONNECT from ") + remoteIp + (clientId.length() ? (" (clientId=" + clientId + ")") : ""));
+            Serial.printf("[QingpingBroker] CONNECT from %s (clientId=%s)\n", remoteIp.c_str(), clientId.c_str());
             break;
         }
         case 8: { // SUBSCRIBE
@@ -150,16 +192,17 @@ void QingpingBroker::handleClientPacket(QingpingClientSlot& slot) {
                 const uint8_t suback[5] = {0x90, 0x03, pktIdHi, pktIdLo, 0x00};
                 client.write(suback, 5);
 
+                addLog(String("SUBSCRIBE from ") + remoteIp + " to [" + subTopic + "]");
                 Serial.printf("[QingpingBroker] Client %s subscribed to [%s]\n",
-                              client.remoteIP().toString().c_str(), subTopic.c_str());
+                              remoteIp.c_str(), subTopic.c_str());
 
-                // Extract MAC from "qingping/<MAC>/down" and send fast reporting interval config
                 if (subTopic.length() > 0) {
                     slot.downTopic = subTopic;
                     if (subTopic.startsWith("qingping/")) {
                         int secondSlash = subTopic.indexOf('/', 9);
                         if (secondSlash > 9) {
                             slot.mac = VentilationController::normalizeMac(subTopic.substring(9, secondSlash));
+                            VentilationController::instance().onQingpingConnected(slot.mac, remoteIp);
                         }
                     }
                     sendFastReportConfig(client, slot.downTopic);
@@ -190,9 +233,8 @@ void QingpingBroker::handleClientPacket(QingpingClientSlot& slot) {
             }
 
             size_t payloadLen = remLen - payloadOffset;
-            String payload((const char*)(buf.data() + payloadOffset), payloadLen);
+            const uint8_t* payloadData = buf.data() + payloadOffset;
 
-            // Extract MAC and derive downTopic if not yet stored on slot
             if (topic.startsWith("qingping/")) {
                 int secondSlash = topic.indexOf('/', 9);
                 if (secondSlash > 9) {
@@ -206,13 +248,22 @@ void QingpingBroker::handleClientPacket(QingpingClientSlot& slot) {
                 }
             }
 
-            // Re-send 15s fast-report command initially or every hour so it never expires
+            // Build readable log snippet
+            String preview = "";
+            if (payloadLen >= 2 && payloadData[0] == 0x43 && payloadData[1] == 0x47) {
+                preview = String("[Binary CG TLV, ") + payloadLen + " bytes]";
+            } else {
+                size_t showLen = min(payloadLen, (size_t)120);
+                preview = String((const char*)payloadData, showLen);
+            }
+            addLog(String("PUBLISH [") + topic + "] (" + payloadLen + "B): " + preview);
+
             if (slot.downTopic.length() > 0 && (slot.lastConfigSent == 0 || (millis() - slot.lastConfigSent > 3600000UL))) {
                 sendFastReportConfig(client, slot.downTopic);
                 slot.lastConfigSent = millis();
             }
 
-            VentilationController::instance().onQingpingJson(topic, payload, client.remoteIP().toString());
+            VentilationController::instance().onQingpingPayload(topic, payloadData, payloadLen, remoteIp);
             break;
         }
         case 12: { // PINGREQ
@@ -221,6 +272,7 @@ void QingpingBroker::handleClientPacket(QingpingClientSlot& slot) {
             break;
         }
         case 14: { // DISCONNECT
+            addLog(String("DISCONNECT from ") + remoteIp);
             client.stop();
             break;
         }
@@ -230,7 +282,6 @@ void QingpingBroker::handleClientPacket(QingpingClientSlot& slot) {
 }
 
 void QingpingBroker::update() {
-    // 1. Accept any new incoming TCP connections on port 1883
     if (server.hasClient()) {
         WiFiClient incoming = server.available();
         if (incoming) {
@@ -260,17 +311,16 @@ void QingpingBroker::update() {
             slots[targetIdx].downTopic = "";
             slots[targetIdx].lastActivity = millis();
             slots[targetIdx].lastConfigSent = 0;
+            addLog(String("TCP connection opened from ") + incoming.remoteIP().toString());
         }
     }
 
-    // 2. Service connected Qingping clients
     unsigned long now = millis();
     for (int i = 0; i < QINGPING_MAX_CLIENTS; i++) {
         if (slots[i].client && slots[i].client.connected()) {
             while (slots[i].client.available() >= 2) {
                 handleClientPacket(slots[i]);
             }
-            // Drop stale half-open sockets after 5 minutes of total silence
             if (now - slots[i].lastActivity > 300000UL) {
                 slots[i].client.stop();
             }

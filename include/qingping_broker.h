@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
+#include <vector>
 
 #define QINGPING_BROKER_PORT 1883
 #define QINGPING_MAX_CLIENTS 6
@@ -24,11 +25,14 @@ public:
     // Send fast-report interval configuration to a connected Qingping
     void sendFastReportConfig(WiFiClient& client, const String& downTopic);
     int getConnectedClientCount() const;
+    std::vector<String> getRecentLogs() const;
+    void addLog(const String& entry);
 
 private:
     QingpingBroker();
     WiFiServer server;
     QingpingClientSlot slots[QINGPING_MAX_CLIENTS];
+    std::vector<String> recentLogs;
 
     void handleClientPacket(QingpingClientSlot& slot);
     void publishToClient(WiFiClient& client, const String& topic, const String& payload);
