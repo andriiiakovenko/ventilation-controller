@@ -15,6 +15,7 @@ static bool softApDisabled = false;
 void setupWiFi() {
     // Dual mode: SoftAP provides direct access + keeps Wi-Fi channel stable for ESP-NOW
     WiFi.mode(WIFI_AP_STA);
+    WiFi.setSleep(false);
 
     // Start SoftAP on configured ESPNOW channel
     WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASSWORD, ESPNOW_CHANNEL);
@@ -27,10 +28,11 @@ void setupWiFi() {
     if (strlen(WIFI_STA_SSID) > 0 && String(WIFI_STA_SSID) != "YourWiFiSSID") {
         Serial.printf("[WiFi] Connecting to Station SSID: %s ...\n", WIFI_STA_SSID);
         WiFi.begin(WIFI_STA_SSID, WIFI_STA_PASSWORD);
+        WiFi.setSleep(false);
 
         unsigned long startAttempt = millis();
-        // Wait up to 8 seconds for connection to prevent blocking autonomous startup
-        while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 8000) {
+        // Wait up to 15 seconds for connection to prevent blocking autonomous startup
+        while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 15000) {
             delay(250);
             Serial.print(".");
         }

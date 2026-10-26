@@ -1,4 +1,5 @@
 #include "ventilation_controller.h"
+#include "qingping_broker.h"
 #include <Preferences.h>
 #include <ArduinoJson.h>
 
@@ -419,6 +420,9 @@ void VentilationController::onQingpingConnected(const String& rawMac, const Stri
         room.sensorType = "qingping";
         room.mac = dq.formattedMac;
         if (remoteIp.length() > 0) room.ip = remoteIp;
+        if (dq.hasMetrics) {
+            room.isOnline = true;
+        }
     }
     notifyChange();
 }
@@ -785,7 +789,10 @@ void VentilationController::update() {
 
         for (auto& pair : rooms) {
             RoomSensorData& room = pair.second;
-            if (room.isOnline && (now - room.lastSeen > SENSOR_OFFLINE_TIMEOUT_MS)) {
+            unsigned long timeoutMs = (room.sensorType == "qingping") ? 1200000UL : SENSOR_OFFLINE_TIMEOUT_MS;
+            bool tcpAlive = (room.sensorType == "qingping" && room.assignedMac.length() == 12 &&
+                             QingpingBroker::instance().isMacConnected(room.assignedMac));
+            if (room.isOnline && !tcpAlive && (now - room.lastSeen > timeoutMs)) {
                 room.isOnline = false;
                 changed = true;
                 Serial.printf("[VentilationController] Room sensor [%s] went OFFLINE\n", room.id.c_str());
