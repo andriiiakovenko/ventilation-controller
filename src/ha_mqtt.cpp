@@ -277,10 +277,8 @@ void HAMqttManager::publishSensorTelemetry() {
                 String co2Topic = String("ventilation/sensor/") + pair.first + "/co2";
                 mqttClient.publish(co2Topic.c_str(), String(s.co2).c_str(), true);
             }
-            if (s.pm25 > 0) {
-                String pmTopic = String("ventilation/sensor/") + pair.first + "/pm25";
-                mqttClient.publish(pmTopic.c_str(), String(s.pm25).c_str(), true);
-            }
+            String pmTopic = String("ventilation/sensor/") + pair.first + "/pm25";
+            mqttClient.publish(pmTopic.c_str(), String(s.pm25).c_str(), true);
         }
     }
 }

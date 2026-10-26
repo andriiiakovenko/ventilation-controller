@@ -323,9 +323,18 @@ void VentilationController::onSensorPacket(const ESPNowSensorPacket& packet, con
 
     std::lock_guard<std::recursive_mutex> lock(stateMutex);
 
-    // Parents room now uses Foreldre Air Monitor (Qingping Wi-Fi), so any ESP-NOW packet
-    // from the former 'parents' ESP32-C3 sensor node is automatically routed to 'gym' room.
-    if (rId == "parents") {
+    // Format sender MAC early so we can identify specific ESP-NOW hardware nodes
+    String senderMacStr = "";
+    if (mac != nullptr) {
+        char macBuf[18];
+        snprintf(macBuf, sizeof(macBuf), "%02X:%02X:%02X:%02X:%02X:%02X",
+                 mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+        senderMacStr = String(macBuf);
+    }
+
+    // Route the original 'parents' ESP32-C3 node (64:E8:33:BB:3E:EC) or any 'parents' ESP-NOW packet
+    // while 'parents' is bound to a Qingping MAC over to 'gym' room.
+    if (rId == "parents" && (senderMacStr == "64:E8:33:BB:3E:EC" || rooms["parents"].assignedMac.length() == 12)) {
         rId = "gym";
     }
 
@@ -338,6 +347,7 @@ void VentilationController::onSensorPacket(const ESPNowSensorPacket& packet, con
 
     RoomSensorData& room = rooms[rId];
     room.sensorType = "espnow";
+    room.sensorLabel = "IKEA VINDRIKTNING + ESP32-C3 (ESP-NOW)";
     room.temperature = packet.temperature;
     room.humidity = packet.humidity;
     room.batteryVoltage = packet.batteryVoltage;

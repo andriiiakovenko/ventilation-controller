@@ -1295,16 +1295,14 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
                                 <div class="sensor-metric-val" style="color:#4ade80;">${s.online ? s.hum.toFixed(1) + '%' : '--'}</div>
                                 <div class="sensor-metric-label">Humidity</div>
                             </div>
-                            ${(s.co2 > 0) ? `
                             <div>
-                                <div class="sensor-metric-val" style="color:#fbbf24;">${s.co2} ppm</div>
+                                <div class="sensor-metric-val" style="color:#fbbf24;">${(s.online && s.co2 > 0) ? s.co2 + ' ppm' : '--'}</div>
                                 <div class="sensor-metric-label">CO₂ Level</div>
-                            </div>` : ''}
-                            ${(s.pm25 > 0 || isQingping) ? `
+                            </div>
                             <div>
                                 <div class="sensor-metric-val" style="color:#c084fc;">${s.online ? s.pm25 + ' µg/m³' : '--'}</div>
-                                <div class="sensor-metric-label">PM2.5${s.pm10 > 0 ? ' (PM10: ' + s.pm10 + ')' : ''}</div>
-                            </div>` : ''}
+                                <div class="sensor-metric-label">PM2.5${(s.online && s.pm10 > 0) ? ' (PM10: ' + s.pm10 + ')' : ''}</div>
+                            </div>
                         </div>
                         <div style="font-size:0.75rem; color:var(--text-muted); display:flex; justify-content:space-between;">
                             <span>${isQingping ? (s.mac ? 'MAC: ' + s.mac : 'Unbound MAC') : 'FW: v' + (s.version || '0.0.1')}</span>
