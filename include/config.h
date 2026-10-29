@@ -66,4 +66,4 @@
   65.0f // % RH: Open valve & increase fan speed
 #define DEFAULT_HUMIDITY_TARGET_THRESHOLD 55.0f // % RH: Return to normal
 #define SENSOR_OFFLINE_TIMEOUT_MS                                              \
-  180000 // 3 minutes timeout for wireless sensors
+  600000 // 10 minutes timeout for wireless sensors (supports IKEA fan duty-cycle)
